@@ -7,6 +7,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Add app icon
+        run: |
+          mkdir -p app/src/main/res/drawable-nodpi
+          cp "$(ls *.png | head -n 1)" app/src/main/res/drawable-nodpi/app_logo.png
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
