@@ -2,10 +2,14 @@
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
     <application
-        android:label="TextExtract"
+        android:label="Text Extractor"
+        android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
-        android:theme="@style/Theme.AppCompat.DayNight">
-        <activity android:name=".MainActivity" android:exported="true">
+        android:theme="@style/Theme.Material3.Dark.NoActionBar">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
