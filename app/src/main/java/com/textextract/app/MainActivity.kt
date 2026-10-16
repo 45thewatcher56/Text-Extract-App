@@ -395,7 +395,7 @@ class OverlayView(ctx: Context) : View(ctx) {
         }
     )
 
-    init {
+ init {
         setBackgroundColor(Color.parseColor("#070D1F"))
     }
 
@@ -848,7 +848,8 @@ class MainActivity : AppCompatActivity() {
                 for (sp in s.getSpans(start, end, LowConfSpan::class.java)) s.removeSpan(sp)
             }
         })
-val col = LinearLayout(this).apply {
+
+        val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(16), dp(18), dp(28))
             put(header)
@@ -1070,7 +1071,8 @@ val col = LinearLayout(this).apply {
         }
         status.text = "${uris.size} file(s) ready. Tap Extract text."
     }
-private fun rotateNext() {
+
+    private fun rotateNext() {
         rotationDeg = (rotationDeg + 90) % 360
         preview.rotation = rotationDeg.toFloat()
         rotateBtn.text = "Rotate ${rotationDeg}°"
@@ -1105,7 +1107,7 @@ private fun rotateNext() {
 
     // ---------- Crop ----------
 
-    private fun openCrop() {
+private fun openCrop() {
         val imgs = sources.filter { !isPdf(it) }
         if (imgs.isEmpty()) {
             toast("Choose a photo first. PDF pages cannot be cropped.")
@@ -1267,6 +1269,28 @@ private fun rotateNext() {
             fd.close()
         }
     }
+
+    private fun showResult(text: String): Int {
+        var count = 0
+        val sp = SpannableStringBuilder(text)
+        var cursor = 0
+        for (p in pageStore) for (l in p.lines) {
+            if (!(l.confidence > 0f && l.confidence < LOW_CONF)) continue
+            val s = l.text.trim().replace(bulletRegex, "").replace(numberRegex, "").trim()
+            if (s.length < 3) continue
+            var idx = text.indexOf(s, cursor)
+            if (idx < 0) idx = text.indexOf(s)
+            if (idx < 0) continue
+            sp.setSpan(LowConfSpan(), idx, idx + s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            cursor = idx + s.length
+            count++
+        }
+        applying = true
+        output.setText(sp)
+        applying = false
+        return count
+    }
+
 private fun showResult(text: String): Int {
         var count = 0
         val sp = SpannableStringBuilder(text)
