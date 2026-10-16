@@ -395,7 +395,7 @@ class OverlayView(ctx: Context) : View(ctx) {
         }
     )
 
- init {
+    init {
         setBackgroundColor(Color.parseColor("#070D1F"))
     }
 
@@ -1107,7 +1107,7 @@ class MainActivity : AppCompatActivity() {
 
     // ---------- Crop ----------
 
-private fun openCrop() {
+    private fun openCrop() {
         val imgs = sources.filter { !isPdf(it) }
         if (imgs.isEmpty()) {
             toast("Choose a photo first. PDF pages cannot be cropped.")
@@ -1271,27 +1271,6 @@ private fun openCrop() {
     }
 
     private fun showResult(text: String): Int {
-        var count = 0
-        val sp = SpannableStringBuilder(text)
-        var cursor = 0
-        for (p in pageStore) for (l in p.lines) {
-            if (!(l.confidence > 0f && l.confidence < LOW_CONF)) continue
-            val s = l.text.trim().replace(bulletRegex, "").replace(numberRegex, "").trim()
-            if (s.length < 3) continue
-            var idx = text.indexOf(s, cursor)
-            if (idx < 0) idx = text.indexOf(s)
-            if (idx < 0) continue
-            sp.setSpan(LowConfSpan(), idx, idx + s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            cursor = idx + s.length
-            count++
-        }
-        applying = true
-        output.setText(sp)
-        applying = false
-        return count
-    }
-
-private fun showResult(text: String): Int {
         var count = 0
         val sp = SpannableStringBuilder(text)
         var cursor = 0
