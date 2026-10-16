@@ -12,6 +12,7 @@ import android.graphics.Color
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.ImageDecoder
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfRenderer
@@ -36,6 +37,8 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.util.concurrent.Executors
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 
 private data class Row(val text: String, val top: Int, val bottom: Int, val cells: Int)
 
@@ -119,6 +122,86 @@ private fun structure(result: Text, pageWidth: Int): String {
     return groups.filter { it.isNotEmpty() }.joinToString("\n\n") { compose(rowsOf(it)) }
 }
 
+// Median tilt of the text lines, in degrees (null if there is too little text to tell).
+private fun medianAngle(result: Text): Float? {
+    val angles = result.textBlocks.flatMap { it.lines }
+        .filter { it.text.trim().length >= 4 }
+        .map {
+            var d = it.angle
+            while (d > 90f) d -= 180f
+            while (d < -90f) d += 180f
+            d
+        }
+        .sorted()
+    return if (angles.size < 3) null else angles[angles.size / 2]
+}
+
+// Rotates a bitmap by the given degrees, filling the new corners with white.
+private fun rotateOnWhite(src: Bitmap, deg: Float): Bitmap {
+    val rad = Math.toRadians(abs(deg).toDouble())
+    val w = (src.width * cos(rad) + src.height * sin(rad)).toInt()
+    val h = (src.width * sin(rad) + src.height * cos(rad)).toInt()
+    val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    out.eraseColor(Color.WHITE)
+    val m = Matrix()
+    m.postTranslate(-src.width / 2f, -src.height / 2f)
+    m.postRotate(deg)
+    m.postTranslate(w / 2f, h / 2f)
+    Canvas(out).drawBitmap(src, m, Paint(Paint.FILTER_BITMAP_FLAG))
+    return out
+}
+
+// Evens out shadows and faded paper by dividing each pixel by its local background brightness.
+private fun cleanScan(input: Bitmap): Bitmap {
+    var src = input
+    val big = maxOf(src.width, src.height)
+    if (big > 2000) {
+        val s = 2000f / big
+        src = Bitmap.createScaledBitmap(
+            src, (src.width * s).toInt(), (src.height * s).toInt(), true
+        )
+    }
+    val w = src.width
+    val h = src.height
+    val px = IntArray(w * h)
+    src.getPixels(px, 0, w, 0, 0, w, h)
+    if (src !== input) src.recycle()
+    val gray = ByteArray(w * h)
+    for (i in px.indices) {
+        val c = px[i]
+        gray[i] = ((299 * ((c shr 16) and 255) + 587 * ((c shr 8) and 255) +
+            114 * (c and 255)) / 1000).toByte()
+    }
+    val stride = w + 1
+    val integral = IntArray(stride * (h + 1))
+    for (y in 0 until h) {
+        var rowSum = 0
+        for (x in 0 until w) {
+            rowSum += gray[y * w + x].toInt() and 255
+            integral[(y + 1) * stride + x + 1] = integral[y * stride + x + 1] + rowSum
+        }
+    }
+    val r = maxOf(w, h) / 16
+    for (y in 0 until h) {
+        val y0 = maxOf(0, y - r)
+        val y1 = minOf(h, y + r + 1)
+        for (x in 0 until w) {
+            val x0 = maxOf(0, x - r)
+            val x1 = minOf(w, x + r + 1)
+            val area = (x1 - x0) * (y1 - y0)
+            val sum = integral[y1 * stride + x1] - integral[y0 * stride + x1] -
+                integral[y1 * stride + x0] + integral[y0 * stride + x0]
+            val mean = maxOf(sum / area, 1)
+            val g = gray[y * w + x].toInt() and 255
+            val v = minOf(255, g * 240 / mean)
+            px[y * w + x] = (0xFF shl 24) or (v shl 16) or (v shl 8) or v
+        }
+    }
+    val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    out.setPixels(px, 0, w, 0, 0, w, h)
+    return out
+}
+
 class MainActivity : AppCompatActivity() {
     companion object {
         private const val MAX_SIDE = 2400
@@ -153,6 +236,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var busyText: TextView
     private lateinit var splash: View
     private lateinit var enhanceBox: CheckBox
+    private lateinit var straightenBox: CheckBox
+    private lateinit var cleanBox: CheckBox
     private lateinit var rotateBtn: MaterialButton
     private var cameraUri: Uri? = null
 
@@ -188,6 +273,14 @@ class MainActivity : AppCompatActivity() {
             setTextColor(color)
             if (bold) typeface = Typeface.DEFAULT_BOLD
         }
+
+    private fun checkBox(label: String, checked: Boolean) = CheckBox(this).apply {
+        text = label
+        isChecked = checked
+        textSize = 14f
+        setTextColor(TEXT)
+        buttonTintList = ColorStateList.valueOf(CYAN)
+    }
 
     private fun filledButton(
         label: String, color: Int = CYAN, textColor: Int = DARK, onClick: () -> Unit
@@ -284,13 +377,9 @@ class MainActivity : AppCompatActivity() {
 
         status = tv("Choose photos, take one, or open a PDF.", 14f, MUTED)
 
-        enhanceBox = CheckBox(this).apply {
-            text = "Enhance contrast"
-            isChecked = true
-            textSize = 14f
-            setTextColor(TEXT)
-            buttonTintList = ColorStateList.valueOf(CYAN)
-        }
+        enhanceBox = checkBox("Enhance contrast", true)
+        straightenBox = checkBox("Auto-straighten", true)
+        cleanBox = checkBox("Clean scan", false)
         rotateBtn = outlineButton("Rotate 0°") { rotateNext() }
 
         output = EditText(this).apply {
@@ -321,6 +410,8 @@ class MainActivity : AppCompatActivity() {
             put(card(previewBox), 16)
             put(status, 12)
             put(row(enhanceBox, rotateBtn), 8)
+            put(row(straightenBox, cleanBox), 4)
+            put(tv("Clean scan evens out shadows and faded paper. It is slower.", 12f, MUTED), 2)
             put(filledButton("Extract text", AMBER) { extract() }, 12)
             put(card(output), 16)
             put(row(
@@ -539,6 +630,8 @@ class MainActivity : AppCompatActivity() {
         }
         val list = sources.toList()
         val enhanceOn = enhanceBox.isChecked
+        val straightenOn = straightenBox.isChecked
+        val cleanOn = cleanBox.isChecked
         val rot = rotationDeg
         cancelled = false
         truncated = false
@@ -546,20 +639,54 @@ class MainActivity : AppCompatActivity() {
         showBusy(true, "Getting ready…")
         pool.execute {
             val pages = mutableListOf<String>()
+            var straightened = 0
             try {
                 for (uri in list) {
                     if (cancelled) break
                     forEachPage(uri) { bmp ->
-                        updateBusy("Reading page ${pages.size + 1}…")
-                        val work = if (enhanceOn) enhance(bmp) else bmp
+                        if (cancelled) {
+                            bmp.recycle()
+                            return@forEachPage
+                        }
+                        val n = pages.size + 1
+                        updateBusy("Reading page $n…")
+                        val prepared = when {
+                            cleanOn -> cleanScan(bmp)
+                            enhanceOn -> enhance(bmp)
+                            else -> bmp
+                        }
                         try {
-                            val result = Tasks.await(
-                                recognizer.process(InputImage.fromBitmap(work, rot))
+                            var result = Tasks.await(
+                                recognizer.process(InputImage.fromBitmap(prepared, rot))
                             )
-                            val w = if (rot % 180 == 0) work.width else work.height
-                            pages.add(structure(result, w))
+                            var pageW = if (rot % 180 == 0) prepared.width else prepared.height
+
+                            if (straightenOn && !cancelled) {
+                                val a1 = medianAngle(result)
+                                if (a1 != null && abs(a1) in 1.5f..20f) {
+                                    updateBusy("Straightening page $n…")
+                                    for (sign in listOf(-1f, 1f)) {
+                                        val fixed = rotateOnWhite(prepared, sign * a1)
+                                        try {
+                                            val r2 = Tasks.await(
+                                                recognizer.process(InputImage.fromBitmap(fixed, rot))
+                                            )
+                                            val a2 = medianAngle(r2)
+                                            if (a2 != null && abs(a2) < abs(a1) * 0.6f) {
+                                                result = r2
+                                                pageW = if (rot % 180 == 0) fixed.width else fixed.height
+                                                straightened++
+                                                break
+                                            }
+                                        } finally {
+                                            fixed.recycle()
+                                        }
+                                    }
+                                }
+                            }
+                            pages.add(structure(result, pageW))
                         } finally {
-                            if (work !== bmp) work.recycle()
+                            if (prepared !== bmp) prepared.recycle()
                             bmp.recycle()
                         }
                     }
@@ -579,6 +706,7 @@ class MainActivity : AppCompatActivity() {
                         "No text found. Try a sharper, well-lit photo."
                     } else {
                         "Done: ${pages.size} page(s) read." +
+                            (if (straightened > 0) " Straightened $straightened page(s)." else "") +
                             (if (truncated) " Only the first $MAX_PDF_PAGES PDF pages were read." else "") +
                             " You can edit the text below."
                     }
