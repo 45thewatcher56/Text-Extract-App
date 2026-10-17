@@ -907,8 +907,8 @@ OverlayView(this).apply { onTap = { copyLine(it) } }
                 addView(outlineButton("Close") { hideReview() },
                     LinearLayout.LayoutParams(dp(110), WRAP))
             })
-            put(tv("Tap a line to copy it. Pinch to zoom. Amber means uncertain.", 12f, MUTED), 6)
-            addView(overlay, LinearLayout.LayoutParams(MATCH, 0, 1f).apply {
+            put(tv("Tap a line to copy it. Pinch to zoom. Amber means uncertain.", 12f, MUTED), 6)                                  
+            addView(pageOverlay, LinearLayout.LayoutParams(MATCH, 0, 1f).apply {
                 topMargin = dp(8)
                 bottomMargin = dp(8)
             })
