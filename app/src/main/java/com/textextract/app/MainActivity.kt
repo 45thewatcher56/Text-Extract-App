@@ -675,7 +675,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var straightenBox: CheckBox
     private lateinit var cleanBox: CheckBox
     private lateinit var rotateBtn: MaterialButton
-    private lateinit var overlay: OverlayView
+    private lateinit var pageOverlay: OverlayView
     private lateinit var cropView: CropView
     private lateinit var reviewLayer: View
     private lateinit var cropLayer: View
@@ -890,7 +890,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Review screen: page image with a box around each line
-        overlay = OverlayView(this).apply { onTap = { copyLine(it) } }
+        pageOverlay =
+OverlayView(this).apply { onTap = { copyLine(it) } }
         reviewTitle = tv("", 16f, TEXT, true)
         reviewLayer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
