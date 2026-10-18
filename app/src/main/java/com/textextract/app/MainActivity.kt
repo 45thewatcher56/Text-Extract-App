@@ -145,7 +145,6 @@ private fun structure(result: Text, pageWidth: Int): String {
     } else listOf(lines)
     return groups.filter { it.isNotEmpty() }.joinToString("\n\n") { compose(rowsOf(it)) }
 }
-
 private fun linesOf(result: Text): List<LineData> =
     result.textBlocks.flatMap { it.lines }
         .filter { it.boundingBox != null && it.text.isNotBlank() }
@@ -372,8 +371,7 @@ class OverlayView(ctx: Context) : View(ctx) {
             }
         }
     )
-
-    private val gestures = GestureDetector(
+private val gestures = GestureDetector(
         ctx,
         object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent) = true
@@ -552,8 +550,7 @@ class CropView(ctx: Context) : View(ctx) {
         layoutDest()
         invalidate()
     }
-
-    override fun onDraw(c: Canvas) {
+override fun onDraw(c: Canvas) {
         val b = bmp ?: return
         c.drawBitmap(b, null, dest, null)
         val r = boxView()
@@ -719,8 +716,7 @@ class MainActivity : AppCompatActivity() {
             setTextColor(color)
             if (bold) typeface = Typeface.DEFAULT_BOLD
         }
-
-    private fun checkBox(label: String, checked: Boolean) = CheckBox(this).apply {
+private fun checkBox(label: String, checked: Boolean) = CheckBox(this).apply {
         text = label
         isChecked = checked
         textSize = 14f
@@ -890,8 +886,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Review screen: page image with a box around each line
-        pageOverlay =
-OverlayView(this).apply { onTap = { copyLine(it) } }
+        pageOverlay = OverlayView(this).apply { onTap = { copyLine(it) } }
         reviewTitle = tv("", 16f, TEXT, true)
         reviewLayer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -907,7 +902,7 @@ OverlayView(this).apply { onTap = { copyLine(it) } }
                 addView(outlineButton("Close") { hideReview() },
                     LinearLayout.LayoutParams(dp(110), WRAP))
             })
-            put(tv("Tap a line to copy it. Pinch to zoom. Amber means uncertain.", 12f, MUTED), 6)                                  
+            put(tv("Tap a line to copy it. Pinch to zoom. Amber means uncertain.", 12f, MUTED), 6)
             addView(pageOverlay, LinearLayout.LayoutParams(MATCH, 0, 1f).apply {
                 topMargin = dp(8)
                 bottomMargin = dp(8)
@@ -967,8 +962,7 @@ OverlayView(this).apply { onTap = { copyLine(it) } }
                 busyText.text = "Cancelling…"
             }, LinearLayout.LayoutParams(dp(140), WRAP))
         }
-
-        splash = LinearLayout(this).apply {
+splash = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setBackgroundColor(BG)
@@ -1107,8 +1101,7 @@ OverlayView(this).apply { onTap = { copyLine(it) } }
         }
 
     // ---------- Crop ----------
-
-    private fun openCrop() {
+private fun openCrop() {
         val imgs = sources.filter { !isPdf(it) }
         if (imgs.isEmpty()) {
             toast("Choose a photo first. PDF pages cannot be cropped.")
@@ -1191,7 +1184,7 @@ OverlayView(this).apply { onTap = { copyLine(it) } }
         val b = BitmapFactory.decodeByteArray(p.jpeg, 0, p.jpeg.size)
         val old = reviewBmp
         reviewBmp = b
-        overlay.setPage(b, p.lines)
+        pageOverlay.setPage(b, p.lines)
         old?.recycle()
         reviewTitle.text = "Page ${reviewIdx + 1} of ${pageStore.size}"
     }
