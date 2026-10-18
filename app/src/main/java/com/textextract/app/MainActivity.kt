@@ -145,6 +145,7 @@ private fun structure(result: Text, pageWidth: Int): String {
     } else listOf(lines)
     return groups.filter { it.isNotEmpty() }.joinToString("\n\n") { compose(rowsOf(it)) }
 }
+
 private fun linesOf(result: Text): List<LineData> =
     result.textBlocks.flatMap { it.lines }
         .filter { it.boundingBox != null && it.text.isNotBlank() }
@@ -371,7 +372,8 @@ class OverlayView(ctx: Context) : View(ctx) {
             }
         }
     )
-private val gestures = GestureDetector(
+
+    private val gestures = GestureDetector(
         ctx,
         object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent) = true
@@ -550,7 +552,8 @@ class CropView(ctx: Context) : View(ctx) {
         layoutDest()
         invalidate()
     }
-override fun onDraw(c: Canvas) {
+
+    override fun onDraw(c: Canvas) {
         val b = bmp ?: return
         c.drawBitmap(b, null, dest, null)
         val r = boxView()
@@ -716,7 +719,8 @@ class MainActivity : AppCompatActivity() {
             setTextColor(color)
             if (bold) typeface = Typeface.DEFAULT_BOLD
         }
-private fun checkBox(label: String, checked: Boolean) = CheckBox(this).apply {
+
+    private fun checkBox(label: String, checked: Boolean) = CheckBox(this).apply {
         text = label
         isChecked = checked
         textSize = 14f
@@ -962,7 +966,8 @@ private fun checkBox(label: String, checked: Boolean) = CheckBox(this).apply {
                 busyText.text = "Cancelling…"
             }, LinearLayout.LayoutParams(dp(140), WRAP))
         }
-splash = LinearLayout(this).apply {
+
+        splash = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setBackgroundColor(BG)
@@ -1101,7 +1106,8 @@ splash = LinearLayout(this).apply {
         }
 
     // ---------- Crop ----------
-private fun openCrop() {
+
+    private fun openCrop() {
         val imgs = sources.filter { !isPdf(it) }
         if (imgs.isEmpty()) {
             toast("Choose a photo first. PDF pages cannot be cropped.")
@@ -1316,6 +1322,7 @@ private fun openCrop() {
                         updateBusy("Reading page $n…")
                         val toFree = mutableSetOf<Bitmap>(bmp)
                         try {
+                            // Grey, boosted copy: used only for reading the text.
                             val prepared = when {
                                 cleanOn -> cleanScan(bmp)
                                 enhanceOn -> enhance(bmp)
@@ -1324,10 +1331,11 @@ private fun openCrop() {
                             toFree.add(prepared)
                             val upright = if (rot != 0) rotate90(prepared, rot) else prepared
                             toFree.add(upright)
-                            var pageBmp = upright
                             var result = Tasks.await(
                                 recognizer.process(InputImage.fromBitmap(upright, 0))
                             )
+                            var pageW = upright.width
+                            var fixAngle: Float? = null
                             if (straightenOn && !cancelled) {
                                 val a1 = medianAngle(result)
                                 if (a1 != null && abs(a1) in 1.5f..20f) {
@@ -1338,21 +1346,46 @@ private fun openCrop() {
                                             recognizer.process(InputImage.fromBitmap(fixed, 0))
                                         )
                                         val a2 = medianAngle(r2)
-                                        if (a2 != null && abs(a2) < abs(a1) * 0.6f) {
+                                        val better = a2 != null && abs(a2) < abs(a1) * 0.6f
+                                        if (better) {
                                             result = r2
-                                            pageBmp = fixed
-                                            toFree.add(fixed)
+                                            pageW = fixed.width
+                                            fixAngle = sign * a1
                                             straightened++
-                                            break
-                                        } else {
-                                            fixed.recycle()
                                         }
+                                        fixed.recycle()
+                                        if (better) break
                                     }
                                 }
                             }
-                            pages.add(structure(result, pageBmp.width))
+
+                            // Rebuild the page from the original photo (keeping its colors),
+                            // with the same size, rotation and straightening as the reading copy.
+                            val procW = prepared.width
+                            val procH = prepared.height
+                            if (upright !== bmp) upright.recycle()
+                            if (prepared !== bmp) prepared.recycle()
+                            var colorPage: Bitmap = bmp
+                            if (bmp.width != procW || bmp.height != procH) {
+                                colorPage = Bitmap.createScaledBitmap(bmp, procW, procH, true)
+                                toFree.add(colorPage)
+                            }
+                            if (rot != 0) {
+                                colorPage = rotate90(colorPage, rot)
+                                toFree.add(colorPage)
+                            }
+                            val fa = fixAngle
+                            if (fa != null) {
+                                colorPage = rotateOnWhite(colorPage, fa)
+                                toFree.add(colorPage)
+                            }
+
+                            pages.add(structure(result, pageW))
                             data.add(
-                                PageData(toJpeg(pageBmp), pageBmp.width, pageBmp.height, linesOf(result))
+                                PageData(
+                                    toJpeg(colorPage), colorPage.width, colorPage.height,
+                                    linesOf(result)
+                                )
                             )
                         } finally {
                             toFree.forEach { if (!it.isRecycled) it.recycle() }
