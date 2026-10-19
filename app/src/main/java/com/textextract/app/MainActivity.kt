@@ -44,6 +44,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.google.android.material.progressindicator.LinearProgressIndicator
+import com.google.mlkit.nl.languageid.LanguageIdentification
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
@@ -650,6 +651,7 @@ class MainActivity : AppCompatActivity() {
     private val recognizer by lazy {
         TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     }
+    private val langId by lazy { LanguageIdentification.getClient() }
     private val pool = Executors.newSingleThreadExecutor()
     private val sources = mutableListOf<Uri>()
     private val crops = mutableMapOf<Uri, RectF>()
@@ -668,6 +670,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var emptyHint: TextView
     private lateinit var output: EditText
     private lateinit var status: TextView
+    private lateinit var langText: TextView
     private lateinit var busy: View
     private lateinit var busyText: TextView
     private lateinit var splash: View
@@ -822,6 +825,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         status = tv("Choose photos, take one, or open a PDF.", 14f, MUTED)
+        langText = tv("", 13f, CYAN).apply { setOnClickListener { detectLanguage() } }
 
         enhanceBox = checkBox("Enhance contrast", true)
         straightenBox = checkBox("Auto-straighten", true)
@@ -864,6 +868,7 @@ class MainActivity : AppCompatActivity() {
             ), 20)
             put(card(previewBox), 16)
             put(status, 12)
+            put(langText, 4)
             put(row(enhanceBox, straightenBox), 8)
             put(row(cleanBox, rotateBtn), 4)
             put(tv("Clean scan evens out shadows and faded paper. It is slower.", 12f, MUTED), 2)
@@ -1105,6 +1110,44 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+    // ---------- Language detection (on-device, offline) ----------
+
+    private fun langName(tag: String): String {
+        val n = Locale.forLanguageTag(tag).getDisplayLanguage(Locale.ENGLISH)
+        return if (n.isNullOrBlank()) tag else n
+    }
+
+    private fun detectLanguage() {
+        val sample = output.text.toString()
+            .lines()
+            .filter { !it.startsWith("── Page") }
+            .joinToString("\n")
+            .trim()
+            .take(2000)
+        if (sample.length < 12) {
+            langText.text = ""
+            return
+        }
+        langText.text = "Detecting language…"
+        langId.identifyPossibleLanguages(sample)
+            .addOnSuccessListener { list ->
+                val top = list.firstOrNull()
+                if (top == null || top.languageTag == "und") {
+                    langText.text = "Language: not detected"
+                    return@addOnSuccessListener
+                }
+                var msg = "Language: ${langName(top.languageTag)} " +
+                    "(${(top.confidence * 100).toInt()}%)"
+                val second = list.getOrNull(1)
+                if (second != null && second.languageTag != "und" && second.confidence >= 0.2f) {
+                    msg += "  ·  also ${langName(second.languageTag)} " +
+                        "(${(second.confidence * 100).toInt()}%)"
+                }
+                langText.text = msg + "  ·  tap to re-check"
+            }
+            .addOnFailureListener { langText.text = "" }
+    }
+
     // ---------- Crop ----------
 
     private fun openCrop() {
@@ -1305,6 +1348,7 @@ class MainActivity : AppCompatActivity() {
         cancelled = false
         truncated = false
         status.text = "Reading…"
+        langText.text = ""
         showBusy(true, "Getting ready…")
         pool.execute {
             val pages = mutableListOf<String>()
@@ -1414,6 +1458,7 @@ class MainActivity : AppCompatActivity() {
                             (if (truncated) " Only the first $MAX_PDF_PAGES PDF pages were read." else "") +
                             " You can edit the text below."
                     }
+                    detectLanguage()
                 }
             } catch (e: Throwable) {
                 runOnUiThread {
